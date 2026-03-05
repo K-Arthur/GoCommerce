@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShippingService.Data;
 using ShippingService.Models;
+using ShippingService.DTOs;
 
 namespace ShippingService.Controllers;
 
@@ -22,31 +23,32 @@ public class ShipmentsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Shipment>>> GetShipments()
+    public async Task<ActionResult<IEnumerable<ShipmentResponse>>> GetShipments()
     {
-        return await _context.Shipments.ToListAsync();
+        var shipments = await _context.Shipments.ToListAsync();
+        return shipments.Select(s => MapToResponse(s)).ToList();
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Shipment>> GetShipment(int id)
+    public async Task<ActionResult<ShipmentResponse>> GetShipment(int id)
     {
         var shipment = await _context.Shipments.FindAsync(id);
 
         if (shipment == null) return NotFound();
 
-        return shipment;
+        return MapToResponse(shipment);
     }
 
     [HttpPost]
-    public async Task<ActionResult<Shipment>> PostShipment(Shipment shipment)
+    public async Task<ActionResult<ShipmentResponse>> PostShipment(CreateShipmentRequest request)
     {
         // Validate Order exists
         try
         {
-            var response = await _httpClient.GetAsync($"/api/orders/{shipment.OrderId}");
+            var response = await _httpClient.GetAsync($"/api/orders/{request.OrderId}");
             if (!response.IsSuccessStatusCode)
             {
-                return BadRequest($"Order with ID {shipment.OrderId} not found or Order Service is unavailable.");
+                return BadRequest($"Order with ID {request.OrderId} not found or Order Service is unavailable.");
             }
         }
         catch (Exception)
@@ -54,24 +56,43 @@ public class ShipmentsController : ControllerBase
             return BadRequest("Order Service is unavailable for validation.");
         }
 
-        shipment.Status = "Pending";
+        var shipment = new Shipment
+        {
+            OrderId = request.OrderId,
+            ShippingAddress = request.ShippingAddress,
+            Status = "Pending"
+        };
+
         _context.Shipments.Add(shipment);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetShipment), new { id = shipment.Id }, shipment);
+        return CreatedAtAction(nameof(GetShipment), new { id = shipment.Id }, MapToResponse(shipment));
     }
 
     [HttpPut("{id}/status")]
-    public async Task<IActionResult> UpdateStatus(int id, [FromBody] string status)
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateShipmentStatusRequest request)
     {
         var shipment = await _context.Shipments.FindAsync(id);
         if (shipment == null) return NotFound();
 
-        shipment.Status = status;
-        if (status == "Shipped") shipment.ShippedDate = DateTime.UtcNow;
-        else if (status == "Delivered") shipment.DeliveredDate = DateTime.UtcNow;
+        shipment.Status = request.Status;
+        if (request.Status == "Shipped") shipment.ShippedDate = DateTime.UtcNow;
+        else if (request.Status == "Delivered") shipment.DeliveredDate = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
         return NoContent();
+    }
+
+    private static ShipmentResponse MapToResponse(Shipment shipment)
+    {
+        return new ShipmentResponse
+        {
+            Id = shipment.Id,
+            OrderId = shipment.OrderId,
+            ShippingAddress = shipment.ShippingAddress,
+            Status = shipment.Status,
+            ShippedDate = shipment.ShippedDate,
+            DeliveredDate = shipment.DeliveredDate
+        };
     }
 }

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Databases
   productdb:
@@ -42,6 +40,18 @@ services:
     networks:
       - gocommerce-net
 
+  # Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - gocommerce-net
+
   # Microservices
   productservice:
     build:
@@ -51,8 +61,13 @@ services:
       - "5001:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=productdb;Database=ProductDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
     depends_on:
       - productdb
+      - rabbitmq
     networks:
       - gocommerce-net
 
@@ -79,10 +94,15 @@ services:
       - ConnectionStrings__DefaultConnection=Server=orderdb;Database=OrderDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
       - ServiceUrls__CustomerService=http://customerservice:8080
       - ServiceUrls__ProductService=http://productservice:8080
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
     depends_on:
       - orderdb
       - customerservice
       - productservice
+      - rabbitmq
     networks:
       - gocommerce-net
 

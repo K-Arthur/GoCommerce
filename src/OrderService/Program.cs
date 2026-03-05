@@ -20,6 +20,8 @@ builder.Services.AddHttpClient<ProductServiceClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["ServiceUrls:ProductService"]!);
 });
 
+builder.Services.AddSingleton<OrderService.Services.RabbitMqPublisher>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

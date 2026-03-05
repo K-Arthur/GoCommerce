@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using CustomerService.Data;
 using CustomerService.Models;
+using CustomerService.DTOs;
 
 namespace CustomerService.Controllers;
 
@@ -17,36 +18,51 @@ public class CustomersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Customer>>> GetCustomers()
+    public async Task<ActionResult<IEnumerable<CustomerResponse>>> GetCustomers()
     {
-        return await _context.Customers.ToListAsync();
+        var customers = await _context.Customers.ToListAsync();
+        return customers.Select(c => MapToResponse(c)).ToList();
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<Customer>> GetCustomer(int id)
+    public async Task<ActionResult<CustomerResponse>> GetCustomer(int id)
     {
         var customer = await _context.Customers.FindAsync(id);
 
         if (customer == null) return NotFound();
 
-        return customer;
+        return MapToResponse(customer);
     }
 
     [HttpPost]
-    public async Task<ActionResult<Customer>> PostCustomer(Customer customer)
+    public async Task<ActionResult<CustomerResponse>> PostCustomer(CreateCustomerRequest request)
     {
+        var customer = new Customer
+        {
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            Email = request.Email,
+            Address = request.Address
+        };
+
         _context.Customers.Add(customer);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, customer);
+        return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, MapToResponse(customer));
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> PutCustomer(int id, Customer customer)
+    public async Task<IActionResult> PutCustomer(int id, UpdateCustomerRequest request)
     {
-        if (id != customer.Id) return BadRequest();
+        if (id != request.Id) return BadRequest();
 
-        _context.Entry(customer).State = EntityState.Modified;
+        var customer = await _context.Customers.FindAsync(id);
+        if (customer == null) return NotFound();
+
+        customer.FirstName = request.FirstName;
+        customer.LastName = request.LastName;
+        customer.Email = request.Email;
+        customer.Address = request.Address;
 
         try
         {
@@ -76,5 +92,17 @@ public class CustomersController : ControllerBase
     private bool CustomerExists(int id)
     {
         return _context.Customers.Any(e => e.Id == id);
+    }
+
+    private static CustomerResponse MapToResponse(Customer customer)
+    {
+        return new CustomerResponse
+        {
+            Id = customer.Id,
+            FirstName = customer.FirstName,
+            LastName = customer.LastName,
+            Email = customer.Email,
+            Address = customer.Address
+        };
     }
 }
