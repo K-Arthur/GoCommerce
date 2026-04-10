@@ -1,17 +1,21 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY ["ProductService.csproj", "./"]
-RUN dotnet restore "ProductService.csproj"
+RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
+    dotnet restore "ProductService.csproj"
 COPY . .
 WORKDIR "/src/"
-RUN dotnet build "ProductService.csproj" -c Release -o /app/build
+RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
+    dotnet build "ProductService.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "ProductService.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,id=nuget,target=/root/.nuget/packages \
+    dotnet publish "ProductService.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

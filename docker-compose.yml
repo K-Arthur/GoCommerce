@@ -42,7 +42,7 @@ services:
 
   # Message Broker
   rabbitmq:
-    image: rabbitmq:3-management
+    image: docker.io/library/rabbitmq:3-management
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -57,14 +57,14 @@ services:
     build:
       context: src/ProductService
       dockerfile: Dockerfile
-    ports:
-      - "5001:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=productdb;Database=ProductDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
       - RabbitMQ__Host=rabbitmq
       - RabbitMQ__Port=5672
       - RabbitMQ__UserName=guest
       - RabbitMQ__Password=guest
+    ports:
+      - "5001:8080"
     depends_on:
       - productdb
       - rabbitmq
@@ -75,10 +75,10 @@ services:
     build:
       context: src/CustomerService
       dockerfile: Dockerfile
-    ports:
-      - "5002:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=customerdb;Database=CustomerDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
+    ports:
+      - "5002:8080"
     depends_on:
       - customerdb
     networks:
@@ -88,8 +88,6 @@ services:
     build:
       context: src/OrderService
       dockerfile: Dockerfile
-    ports:
-      - "5003:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=orderdb;Database=OrderDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
       - ServiceUrls__CustomerService=http://customerservice:8080
@@ -98,6 +96,8 @@ services:
       - RabbitMQ__Port=5672
       - RabbitMQ__UserName=guest
       - RabbitMQ__Password=guest
+    ports:
+      - "5003:8080"
     depends_on:
       - orderdb
       - customerservice
@@ -110,14 +110,42 @@ services:
     build:
       context: src/ShippingService
       dockerfile: Dockerfile
-    ports:
-      - "5004:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=shippingdb;Database=ShippingDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
       - ServiceUrls__OrderService=http://orderservice:8080
+      - RabbitMQ__Host=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
+    ports:
+      - "5004:8080"
     depends_on:
       - shippingdb
       - orderservice
+      - rabbitmq
+    networks:
+      - gocommerce-net
+
+  apigateway:
+    build:
+      context: src/ApiGateway
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ServiceUrls__OrderService=http://orderservice:8080
+      - ServiceUrls__CustomerService=http://customerservice:8080
+      - ServiceUrls__ProductService=http://productservice:8080
+      - ServiceUrls__ShippingService=http://shippingservice:8080
+      - ReverseProxy__Clusters__product-cluster__Destinations__destination1__Address=http://productservice:8080
+      - ReverseProxy__Clusters__customer-cluster__Destinations__destination1__Address=http://customerservice:8080
+      - ReverseProxy__Clusters__order-cluster__Destinations__destination1__Address=http://orderservice:8080
+      - ReverseProxy__Clusters__shipping-cluster__Destinations__destination1__Address=http://shippingservice:8080
+    depends_on:
+      - productservice
+      - customerservice
+      - orderservice
+      - shippingservice
     networks:
       - gocommerce-net
 

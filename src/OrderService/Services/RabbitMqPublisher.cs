@@ -38,7 +38,12 @@ public class RabbitMqPublisher : IAsyncDisposable
                 type: ExchangeType.Fanout,
                 durable: true);
 
-            _logger.LogInformation("Connected to RabbitMQ and declared exchange 'order_events'.");
+            await _channel.ExchangeDeclareAsync(
+                exchange: "order_cancelled_events",
+                type: ExchangeType.Fanout,
+                durable: true);
+
+            _logger.LogInformation("Connected to RabbitMQ and declared exchanges.");
         }
     }
 
@@ -61,6 +66,28 @@ public class RabbitMqPublisher : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to publish OrderCreated event for Order ID {OrderId}", orderEvent.OrderId);
+        }
+    }
+
+    public async Task PublishOrderCancelledAsync(OrderCancelledEvent orderEvent)
+    {
+        try
+        {
+            await EnsureConnectionAsync();
+
+            var message = JsonSerializer.Serialize(orderEvent);
+            var body = Encoding.UTF8.GetBytes(message);
+
+            await _channel!.BasicPublishAsync(
+                exchange: "order_cancelled_events",
+                routingKey: string.Empty,
+                body: body);
+
+            _logger.LogInformation("Published OrderCancelled event for Order ID {OrderId}", orderEvent.OrderId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish OrderCancelled event for Order ID {OrderId}", orderEvent.OrderId);
         }
     }
 

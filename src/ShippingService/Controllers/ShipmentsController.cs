@@ -42,7 +42,6 @@ public class ShipmentsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ShipmentResponse>> PostShipment(CreateShipmentRequest request)
     {
-        // Validate Order exists
         try
         {
             var response = await _httpClient.GetAsync($"/api/orders/{request.OrderId}");

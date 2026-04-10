@@ -3,21 +3,21 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using ProductService.Data;
-using ProductService.Events;
+using ShippingService.Data;
+using ShippingService.Events;
 
-namespace ProductService.Services;
+namespace ShippingService.Services;
 
-public class OrderCreatedConsumer : BackgroundService
+public class OrderCancelledConsumer : BackgroundService
 {
-    private readonly ILogger<OrderCreatedConsumer> _logger;
+    private readonly ILogger<OrderCancelledConsumer> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _configuration;
     private IConnection? _connection;
     private IChannel? _channel;
 
-    public OrderCreatedConsumer(
-        ILogger<OrderCreatedConsumer> logger,
+    public OrderCancelledConsumer(
+        ILogger<OrderCancelledConsumer> logger,
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration)
     {
@@ -45,25 +45,25 @@ public class OrderCreatedConsumer : BackgroundService
                 _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
                 await _channel.ExchangeDeclareAsync(
-                    exchange: "order_events",
+                    exchange: "order_cancelled_events",
                     type: ExchangeType.Fanout,
                     durable: true,
                     cancellationToken: stoppingToken);
 
-                var queueDeclareResult = await _channel.QueueDeclareAsync(
-                    queue: "product_stock_update",
+                await _channel.QueueDeclareAsync(
+                    queue: "shipment_cancellation",
                     durable: true,
                     exclusive: false,
                     autoDelete: false,
                     cancellationToken: stoppingToken);
 
                 await _channel.QueueBindAsync(
-                    queue: "product_stock_update",
-                    exchange: "order_events",
+                    queue: "shipment_cancellation",
+                    exchange: "order_cancelled_events",
                     routingKey: string.Empty,
                     cancellationToken: stoppingToken);
 
-                _logger.LogInformation("Connected to RabbitMQ. Listening on queue 'product_stock_update'.");
+                _logger.LogInformation("Connected to RabbitMQ. Listening on queue 'shipment_cancellation'.");
                 break;
             }
             catch (Exception ex)
@@ -86,24 +86,24 @@ public class OrderCreatedConsumer : BackgroundService
             {
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);
-                var orderEvent = JsonSerializer.Deserialize<OrderCreatedEvent>(message);
+                var orderEvent = JsonSerializer.Deserialize<OrderCancelledEvent>(message);
 
                 if (orderEvent != null)
                 {
-                    await ProcessOrderCreatedAsync(orderEvent);
+                    await ProcessOrderCancelledAsync(orderEvent);
                 }
 
                 await _channel!.BasicAckAsync(ea.DeliveryTag, multiple: false);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing OrderCreated event.");
+                _logger.LogError(ex, "Error processing OrderCancelled event.");
                 await _channel!.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true);
             }
         };
 
         await _channel!.BasicConsumeAsync(
-            queue: "product_stock_update",
+            queue: "shipment_cancellation",
             autoAck: false,
             consumer: consumer,
             cancellationToken: stoppingToken);
@@ -114,31 +114,26 @@ public class OrderCreatedConsumer : BackgroundService
         }
     }
 
-    private async Task ProcessOrderCreatedAsync(OrderCreatedEvent orderEvent)
+    private async Task ProcessOrderCancelledAsync(OrderCancelledEvent orderEvent)
     {
         using var scope = _scopeFactory.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ProductDbContext>();
+        var context = scope.ServiceProvider.GetRequiredService<ShippingDbContext>();
 
-        foreach (var item in orderEvent.Items)
+        var shipment = await context.Shipments.FirstOrDefaultAsync(s => s.OrderId == orderEvent.OrderId);
+        if (shipment != null)
         {
-            var product = await context.Products.FindAsync(item.ProductId);
-            if (product != null)
-            {
-                product.StockQuantity -= item.Quantity;
-                if (product.StockQuantity < 0) product.StockQuantity = 0;
-
-                _logger.LogInformation(
-                    "Updated stock for Product ID {ProductId}: decremented by {Quantity}. New stock: {Stock}",
-                    item.ProductId, item.Quantity, product.StockQuantity);
-            }
-            else
-            {
-                _logger.LogWarning("Product ID {ProductId} not found for stock update.", item.ProductId);
-            }
+            shipment.Status = "Cancelled";
+            await context.SaveChangesAsync();
+            _logger.LogInformation(
+                "Cancelled shipment for Order ID {OrderId} (Shipment ID {ShipmentId})",
+                orderEvent.OrderId, shipment.Id);
         }
-
-        await context.SaveChangesAsync();
-        _logger.LogInformation("Processed OrderCreated event for Order ID {OrderId}", orderEvent.OrderId);
+        else
+        {
+            _logger.LogInformation(
+                "No shipment found for cancelled Order ID {OrderId} — nothing to update.",
+                orderEvent.OrderId);
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

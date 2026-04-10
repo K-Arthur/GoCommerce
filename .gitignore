@@ -90,3 +90,7 @@ appsettings.Development.json
 appsettings.Production.json
 secrets.json
 *.env
+
+# AI Tools
+.kilocode
+.claude
